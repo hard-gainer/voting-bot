@@ -1,4 +1,6 @@
-box.cfg({listen = "0.0.0.0:3301"})
+box.cfg{
+    listen = "0.0.0.0:3301",
+}
 
 box.schema.user.create('storage', {password = 'password', if_not_exists = true})
 box.schema.user.grant('storage', 'super', nil, nil, {if_not_exists = true})
@@ -33,6 +35,21 @@ if not box.space.polls then
         if_not_exists = true,
         type = 'TREE',
         parts = {'is_active'}
+    })
+
+    local votes1 = {}
+    votes1.Red = 0
+    votes1.Green = 0
+    votes1.Blue = 0
+
+    polls:insert({
+        'poll1',
+        'Favorite color?',
+        {'Red', 'Green', 'Blue'},
+        'user_a',
+        1682514732,
+        true,
+        votes1
     })
 end
 

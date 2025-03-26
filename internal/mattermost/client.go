@@ -111,17 +111,14 @@ func NewClient(cfg config.MattermostConfig, handler PollHandler) (*Client, error
 
 // monitorWebSocket monitors the connection and reconnects if necessary
 func (c *Client) monitorWebSocket() {
-	for {
-		select {
-		case event, ok := <-c.webSocketClient.EventChannel:
-			if !ok {
-				slog.Warn("WebSocket channel closed, reconnecting...")
-				c.reconnectWebSocket()
-				continue
-			}
-			c.handleEvent(event)
-		}
+	for event := range c.webSocketClient.EventChannel {
+		c.handleEvent(event)
 	}
+
+	slog.Warn("WebSocket channel closed, reconnecting...")
+	c.reconnectWebSocket()
+
+	go c.monitorWebSocket()
 }
 
 func (c *Client) reconnectWebSocket() {
@@ -153,7 +150,6 @@ func (c *Client) RegisterCommandHandler(command string, handler CommandHandler) 
 
 // RegisterCommands registers bot commands in Mattermost
 func (c *Client) RegisterCommands(cfg config.MattermostConfig) error {
-	// commandsEndpoint := fmt.Sprintf("http://%s/commands", cfg.MattermostBotExternalURL)
 	commandsEndpoint := fmt.Sprintf("http://%s%s/commands", "voting-bot", cfg.MattermostBotHTTPPort)
 
 	slog.Info("ENDPOINT", "url", commandsEndpoint)
@@ -311,7 +307,7 @@ func (c *Client) handleSlashCommand(event *model.WebSocketEvent) {
 func (c *Client) handlePollCreate(args []string, userID, channelID string) (string, error) {
 	if len(args) < 3 {
 		return "Usage: `/poll-create \"Title\" \"Option 1\" \"Option 2\" ...`\nTitle" +
-				"and at least 2 options enclosed with \"\" are required.", nil
+			"and at least 2 options enclosed with \"\" are required.", nil
 	}
 
 	title := args[0]
@@ -394,7 +390,7 @@ func (c *Client) handlePollEnd(args []string, userID, channelID string) (string,
 	return fmt.Sprintf("Poll has been ended.\n\n%s", results), nil
 }
 
-// handlePollDelete handles poll deletion 
+// handlePollDelete handles poll deletion
 func (c *Client) handlePollDelete(args []string, userID, channelID string) (string, error) {
 	if len(args) < 1 {
 		return "Usage: `/poll-delete [poll-id]`", nil
@@ -415,7 +411,7 @@ func (c *Client) handlePollDelete(args []string, userID, channelID string) (stri
 	return fmt.Sprintf("Poll **%s: %s** has been deleted.", pollID, poll.Title), nil
 }
 
-// handlePollList prints list of all polls 
+// handlePollList prints list of all polls
 func (c *Client) handlePollList(args []string, userID, channelID string) (string, error) {
 	ctx := context.Background()
 	polls, err := c.pollHandler.ListPolls(ctx)

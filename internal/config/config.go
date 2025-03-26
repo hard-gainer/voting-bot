@@ -15,8 +15,10 @@ type Config struct {
 
 // Config contains Mattermost config
 type MattermostConfig struct {
-	MattermostURL   string
-	MattermostToken string
+	MattermostBotHTTPAddr string
+	MattermostBotHTTPPort string
+	MattermostBotURL      string
+	MattermostToken       string
 }
 
 // Config contains Tarantool config
@@ -35,8 +37,10 @@ func NewConfig() *Config {
 
 	return &Config{
 		MattermostConfig: MattermostConfig{
-			MattermostURL:   getEnv("MATTERMOST_URL", "http://localhost:8065"),
-			MattermostToken: getEnv("MATTERMOST_TOKEN", ""),
+			MattermostBotHTTPAddr: getEnv("MATTERMOST_BOT_HTTP_ADDR", "http://localhost:8080"),
+			MattermostBotHTTPPort: getEnv("MATTERMOST_BOT_HTTP_PORT", ":8080"),
+			MattermostBotURL:      getEnv("MATTERMOST_URL", "http://localhost:8065"),
+			MattermostToken:       getEnv("MATTERMOST_TOKEN", ""),
 		},
 		TarantoolConfig: TarantoolConfig{
 			TarantoolAddr: getEnv("TARANTOOL_ADDR", "localhost:3301"),

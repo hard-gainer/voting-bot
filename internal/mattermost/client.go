@@ -154,7 +154,7 @@ func (c *Client) RegisterCommandHandler(command string, handler CommandHandler) 
 // RegisterCommands registers bot commands in Mattermost
 func (c *Client) RegisterCommands(cfg config.MattermostConfig) error {
 	// commandsEndpoint := fmt.Sprintf("http://%s/commands", cfg.MattermostBotExternalURL)
-	commandsEndpoint := fmt.Sprintf("http://%s/commands", "voting-bot:8080")
+	commandsEndpoint := fmt.Sprintf("http://%s%s/commands", "voting-bot", cfg.MattermostBotHTTPPort)
 
 	slog.Info("ENDPOINT", "url", commandsEndpoint)
 

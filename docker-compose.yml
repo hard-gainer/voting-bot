@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
+    restart: unless-stopped
+    ports:
+      - "8065:8065"
+    environment:
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://mmuser:mmuser_password@postgres:5432/mattermost?sslmode=disable
+      - MM_SERVICESETTINGS_SITEURL=http://localhost:8065
+      - MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS=voting-bot,postgres,tarantool
+    depends_on:
+      - postgres
+    networks:
+      - mm-network
+
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mmuser
+      POSTGRES_PASSWORD: mmuser_password
+      POSTGRES_DB: mattermost
+    networks:
+      - mm-network
+
+  tarantool:
+    build:
+      context: ./docker/tarantool
+      dockerfile: Dockerfile
+    container_name: tarantool
+    restart: unless-stopped
+    ports:
+      - "3301:3301"
+    networks:
+      - mm-network
+    healthcheck:
+      test: ["CMD", "tarantoolctl", "eval", "return 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  voting-bot:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile 
+    container_name: voting-bot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mattermost
+      - tarantool
+    environment:
+      - MATTERMOST_BOT_HTTP_ADDR=0.0.0.0:8080
+    networks:
+      - mm-network 
+
+networks:
+  mm-network:
+    driver: bridge

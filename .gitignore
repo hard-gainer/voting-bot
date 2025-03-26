@@ -1,0 +1,23 @@
+# Binaries, plugins, libs
+voting-bot
+
+# Environment variables and secrets
+.env
+
+# Keep example environment file
+!.env.example
+
+# IDE specific files
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+
+# Temporary files
+*.tmp
+/tmp/
+
+# Docker volumes
+docker/volumes/
+tarantool-data/

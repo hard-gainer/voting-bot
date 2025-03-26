@@ -7,7 +7,6 @@ box.schema.user.grant('storage', 'super', nil, nil, {if_not_exists = true})
 
 if not box.space.polls then
     local polls = box.schema.space.create('polls', {
-        if_not_exists = true,
         format = {
             {name = 'id', type = 'string'},
             {name = 'title', type = 'string'},
@@ -28,13 +27,15 @@ if not box.space.polls then
     polls:create_index('created_by', {
         if_not_exists = true,
         type = 'TREE',
-        parts = {'created_by'}
+        parts = {'created_by'},
+        unique = false
     })
 
     polls:create_index('is_active', {
         if_not_exists = true,
         type = 'TREE',
-        parts = {'is_active'}
+        parts = {'is_active'},
+        unique = false 
     })
 
     local votes1 = {}

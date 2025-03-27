@@ -9,6 +9,7 @@ import (
 
 	"github.com/hard-gainer/voting-bot/internal/model"
 	"github.com/tarantool/go-tarantool"
+	pool "github.com/tarantool/go-tarantool/connection_pool"
 )
 
 var (
@@ -33,140 +34,176 @@ type Storage interface {
 
 // TarantoolStorage implements the Storage interface using Tarantool
 type TarantoolStorage struct {
-	conn *tarantool.Connection
+	connPool *pool.ConnectionPool
 }
 
-// NewTarantoolStorage creates a new Tarantool storage instance
+// NewTarantoolStorage creates a new Tarantool storage instance with connection pool
 func NewTarantoolStorage(addr string, opts tarantool.Opts) (*TarantoolStorage, error) {
-	conn, err := tarantool.Connect(addr, opts)
-	if err != nil {
-		return nil, err
-	}
+    slog.Info("Connecting to Tarantool", "addr", addr)
 
-	return &TarantoolStorage{
-		conn: conn,
-	}, nil
+    poolOpts := pool.OptsPool{
+        CheckTimeout:      1 * time.Second,
+    }
+
+    connPool, err := pool.ConnectWithOpts([]string{addr}, opts, poolOpts)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create connection pool: %w", err)
+    }
+
+    _, err = connPool.Call("box.space.polls:len", []interface{}{}, pool.ANY)
+    if err != nil {
+        connPool.Close()
+        return nil, fmt.Errorf("failed to verify polls space: %w", err)
+    }
+
+    slog.Info("Successfully connected to Tarantool")
+    return &TarantoolStorage{
+        connPool: connPool,
+    }, nil
 }
 
 // CreatePoll saves a new poll in Tarantool
 func (s *TarantoolStorage) CreatePoll(ctx context.Context, poll *model.Poll) error {
-	slog.Info("Storing poll in Tarantool", "poll_id", poll.ID)
-	poll.CreatedAt = uint64(time.Now().Unix())
+    slog.Info("Storing poll in Tarantool", "poll_id", poll.ID)
 
-	_, err := s.conn.Insert(
-		"polls",
-		[]interface{}{
-			poll.ID, poll.Title,
-			poll.Options, poll.CreatedBy,
-			poll.CreatedAt, poll.IsActive,
-			poll.Votes,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to insert poll: %w", err)
-	}
+    if poll.CreatedAt == 0 {
+        poll.CreatedAt = uint64(time.Now().Unix())
+    }
 
-	return nil
+    _, err := s.connPool.Insert(
+        "polls",
+        []interface{}{
+            poll.ID, 
+            poll.Title,
+            poll.Options, 
+            poll.CreatedBy,
+            poll.CreatedAt, 
+            poll.IsActive,
+            poll.Votes,
+        },
+        pool.RW,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to insert poll: %w", err)
+    }
+
+    return nil
 }
 
 // GetPoll retrieves a poll from Tarantool
 func (s *TarantoolStorage) GetPoll(ctx context.Context, id string) (*model.Poll, error) {
-	slog.Info("Retrieving poll from Tarantool", "poll_id", id)
+    slog.Info("Retrieving poll from Tarantool", "poll_id", id)
 
-	resp, err := s.conn.Select("polls", "primary", 0, 1, tarantool.IterEq, []interface{}{id})
-	if err != nil {
-		return nil, fmt.Errorf("tarantool select error: %w", err)
-	}
+    // Используем любое доступное соединение для чтения
+    resp, err := s.connPool.Select("polls", "primary", 0, 1, tarantool.IterEq, []interface{}{id}, pool.ANY)
+    if err != nil {
+        return nil, fmt.Errorf("tarantool select error: %w", err)
+    }
 
-	if len(resp.Data) == 0 {
-		return nil, ErrNotFound
-	}
+    if len(resp.Data) == 0 {
+        return nil, ErrNotFound
+    }
 
-	data, ok := resp.Data[0].([]interface{})
-	if !ok || len(data) < 7 {
-		return nil, fmt.Errorf("invalid Tarantool response")
-	}
+    data, ok := resp.Data[0].([]interface{})
+    if !ok || len(data) < 7 {
+        return nil, fmt.Errorf("invalid Tarantool response")
+    }
 
-	return &model.Poll{
-		ID:        data[0].(string),
-		Title:     data[1].(string),
-		Options:   convertToStringSlice(data[2]),
-		CreatedBy: data[3].(string),
-		CreatedAt: data[4].(uint64),
-		IsActive:  data[5].(bool),
-		Votes:     convertToMapStringString(data[6]),
-	}, nil
+    return &model.Poll{
+        ID:        data[0].(string),
+        Title:     data[1].(string),
+        Options:   convertToStringSlice(data[2]),
+        CreatedBy: data[3].(string),
+        CreatedAt: data[4].(uint64),
+        IsActive:  data[5].(bool),
+        Votes:     convertToMapStringString(data[6]),
+    }, nil
 }
 
 // UpdatePoll updates an existing poll in Tarantool
 func (s *TarantoolStorage) UpdatePoll(ctx context.Context, poll *model.Poll) error {
-	slog.Info("Updating poll in Tarantool", "poll_id", poll.ID)
+    slog.Info("Updating poll in Tarantool", "poll_id", poll.ID)
 
-	_, err := s.conn.Replace(
-		"polls",
-		[]interface{}{
-			poll.ID, poll.Title,
-			poll.Options, poll.CreatedBy,
-			poll.CreatedAt, poll.IsActive,
-			poll.Votes,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update poll: %w", err)
-	}
+    _, err := s.connPool.Replace(
+        "polls",
+        []interface{}{
+            poll.ID, 
+            poll.Title,
+            poll.Options, 
+            poll.CreatedBy,
+            poll.CreatedAt, 
+            poll.IsActive,
+            poll.Votes,
+        },
+        pool.RW,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to update poll: %w", err)
+    }
 
-	return nil
+    return nil
 }
 
 // DeletePoll removes a poll from Tarantool
 func (s *TarantoolStorage) DeletePoll(ctx context.Context, id string) error {
-	slog.Info("Deleting poll from Tarantool", "poll_id", id)
+    slog.Info("Deleting poll from Tarantool", "poll_id", id)
 
-	_, err := s.conn.Delete("polls", "primary", []interface{}{id})
-	if err != nil {
-		return fmt.Errorf("failed to delete poll: %w", err)
-	}
+    _, err := s.connPool.Delete("polls", "primary", []interface{}{id}, pool.RW)
+    if err != nil {
+        return fmt.Errorf("failed to delete poll: %w", err)
+    }
 
-	return nil
+    return nil
 }
 
 // ListPolls lists all polls in Tarantool
 func (s *TarantoolStorage) ListPolls(ctx context.Context) ([]*model.Poll, error) {
-	slog.Info("Listing all polls from Tarantool")
+    slog.Info("Listing all polls from Tarantool")
 
-	resp, err := s.conn.Select("polls", "primary", 0, 1000, tarantool.IterAll, []interface{}{})
-	if err != nil {
-		return nil, fmt.Errorf("tarantool select error: %w", err)
-	}
+    // Используем любое соединение для чтения
+    resp, err := s.connPool.Select("polls", "primary", 0, 1000, tarantool.IterAll, []interface{}{}, pool.ANY)
+    if err != nil {
+        return nil, fmt.Errorf("tarantool select error: %w", err)
+    }
 
-	polls := make([]*model.Poll, 0, len(resp.Data))
-
-	for _, tupleData := range resp.Data {
-		data, ok := tupleData.([]interface{})
-		if !ok || len(data) < 7 {
-			slog.Info("Warning: invalid tuple format")
-			continue
-		}
-
-		poll := &model.Poll{
-			ID:        data[0].(string),
-			Title:     data[1].(string),
-			Options:   convertToStringSlice(data[2]),
-			CreatedBy: data[3].(string),
-			CreatedAt: data[4].(uint64),
-			IsActive:  data[5].(bool),
-			Votes:     convertToMapStringString(data[6]),
-		}
-
-		polls = append(polls, poll)
-	}
-
-	return polls, nil
+    return s.convertResponseToPolls(resp)
 }
 
-// Close closes the Tarantool connection
+// convertResponseToPolls converts a Tarantool response to a slice of polls
+func (s *TarantoolStorage) convertResponseToPolls(resp *tarantool.Response) ([]*model.Poll, error) {
+    polls := make([]*model.Poll, 0, len(resp.Data))
+
+    for _, tupleData := range resp.Data {
+        data, ok := tupleData.([]interface{})
+        if !ok || len(data) < 7 {
+            slog.Warn("Invalid tuple format in Tarantool response", "data", tupleData)
+            continue
+        }
+
+        poll := &model.Poll{
+            ID:        data[0].(string),
+            Title:     data[1].(string),
+            Options:   convertToStringSlice(data[2]),
+            CreatedBy: data[3].(string),
+            CreatedAt: data[4].(uint64),
+            IsActive:  data[5].(bool),
+            Votes:     convertToMapStringString(data[6]),
+        }
+
+        polls = append(polls, poll)
+    }
+
+    return polls, nil
+}
+
+// Close closes the Tarantool connection pool
 func (s *TarantoolStorage) Close() error {
-	return s.conn.Close()
+    slog.Info("Closing Tarantool connection pool")
+    errs := s.connPool.Close()
+    if len(errs) > 0 {
+        return fmt.Errorf("errors closing Tarantool pool: %v", errs)
+    }
+    return nil
 }
 
 // convertToStringSlice is a helper function for converting to string slice

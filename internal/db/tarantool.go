@@ -15,7 +15,23 @@ var (
 	ErrNotFound = errors.New("record not found")
 )
 
-// TarantoolStorage implements the db.Storage interface using Tarantool
+// Storage defines the methods for working with the poll storage
+type Storage interface {
+	// CreatePoll saves a new poll in Tarantool
+	CreatePoll(ctx context.Context, poll *model.Poll) error
+	// GetPoll retrieves a poll from Tarantool
+	GetPoll(ctx context.Context, id string) (*model.Poll, error)
+	// UpdatePoll updates an existing poll in Tarantool
+	UpdatePoll(ctx context.Context, poll *model.Poll) error
+	// DeletePoll removes a poll from Tarantool
+	DeletePoll(ctx context.Context, id string) error
+	// ListPolls lists all polls in Tarantool
+	ListPolls(ctx context.Context) ([]*model.Poll, error)
+	// Close closes the Tarantool connection
+	Close() error
+}
+
+// TarantoolStorage implements the Storage interface using Tarantool
 type TarantoolStorage struct {
 	conn *tarantool.Connection
 }
@@ -32,7 +48,7 @@ func NewTarantoolStorage(addr string, opts tarantool.Opts) (*TarantoolStorage, e
 	}, nil
 }
 
-// CreatePoll stores a new poll in Tarantool
+// CreatePoll saves a new poll in Tarantool
 func (s *TarantoolStorage) CreatePoll(ctx context.Context, poll *model.Poll) error {
 	slog.Info("Storing poll in Tarantool", "poll_id", poll.ID)
 	poll.CreatedAt = uint64(time.Now().Unix())

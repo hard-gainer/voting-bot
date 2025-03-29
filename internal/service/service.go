@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hard-gainer/voting-bot/internal/db"
 	"github.com/hard-gainer/voting-bot/internal/model"
-	"github.com/hard-gainer/voting-bot/internal/notification"
 )
 
 // service errors
@@ -22,14 +21,19 @@ var (
 	ErrAlreadyVoted  = errors.New("already voted in this poll")
 )
 
+// MessageSender represents an interface for sending messages
+type MessageSender interface {
+	PostMessage(channelID, message string) error
+}
+
 // Service represents service layer
 type Service struct {
 	storage  db.Storage
-	notifier notification.MessageSender
+	notifier MessageSender
 }
 
 // NewService creates an instance of service
-func NewService(storage db.Storage, notifier notification.MessageSender) *Service {
+func NewService(storage db.Storage, notifier MessageSender) *Service {
 	return &Service{
 		storage:  storage,
 		notifier: notifier,
@@ -37,7 +41,7 @@ func NewService(storage db.Storage, notifier notification.MessageSender) *Servic
 }
 
 // SetNotifier позволяет установить или обновить notifier после создания сервиса
-func (s *Service) SetNotifier(notifier notification.MessageSender) {
+func (s *Service) SetNotifier(notifier MessageSender) {
 	s.notifier = notifier
 }
 
